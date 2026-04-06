@@ -513,38 +513,42 @@ private[sbt] object ClasspathImpl {
       config: Configuration,
       fullReport: UpdateReport,
       jars: Classpath,
+      allowedInternalIds: Seq[ModuleID],
   ): Classpath =
     val index = directDepIndex(directDeps)
+    val internalIndex = directDepIndex(allowedInternalIds)
     val rootKey = (projectId.organization, projectId.name)
-    fullReport.configuration(ConfigRef(config.name)) match
-      case None => jars
-      case Some(configReport) =>
-        val modules = configReport.modules
-        // Callers use resolved names (e.g., cats-core_3).
-        // Build the set of resolved direct dep keys from the full report.
-        val resolvedDirectKeys: Set[(String, String)] = modules
-          .filter(mr => matchesDirectDep(mr.module, index))
-          .map(mr => (mr.module.organization, mr.module.name))
-          .toSet
-        val plusOneKeys: Set[(String, String)] = modules
-          .filter: mr =>
-            mr.callers.exists: c =>
-              val ck = (c.caller.organization, c.caller.name)
-              resolvedDirectKeys.contains(ck) || ck == rootKey
-          .map(mr => (mr.module.organization, mr.module.name))
-          .toSet
-        val allowedKeys = resolvedDirectKeys ++ plusOneKeys
-        jars.filter: entry =>
-          entry.get(Keys.moduleIDStr) match
-            case Some(str) =>
-              val mid = Classpaths.moduleIdJsonKeyFormat.read(str)
-              allowedKeys.contains((mid.organization, mid.name)) ||
-              isScalaLibraryModule(mid)
-            case None => true
+    // Build allowed external dep keys from the update report (if available).
+    val allowedKeys: Set[(String, String)] =
+      fullReport.configuration(ConfigRef(config.name)) match
+        case None => Set.empty
+        case Some(configReport) =>
+          val modules = configReport.modules
+          val resolvedDirectKeys: Set[(String, String)] = modules
+            .filter(mr => matchesDirectDep(mr.module, index))
+            .map(mr => (mr.module.organization, mr.module.name))
+            .toSet
+          val plusOneKeys: Set[(String, String)] = modules
+            .filter: mr =>
+              mr.callers.exists: c =>
+                val ck = (c.caller.organization, c.caller.name)
+                resolvedDirectKeys.contains(ck) || ck == rootKey
+            .map(mr => (mr.module.organization, mr.module.name))
+            .toSet
+          resolvedDirectKeys ++ plusOneKeys
+    jars.filter: entry =>
+      entry.get(Keys.moduleIDStr) match
+        case Some(str) =>
+          val mid = Classpaths.moduleIdJsonKeyFormat.read(str)
+          allowedKeys.contains((mid.organization, mid.name)) ||
+          matchesDirectDep(mid, internalIndex) ||
+          isScalaLibraryModule(mid)
+        case None => true
 
   /**
-   * Apply dependencyMode filtering to a classpath. Entries without moduleIDStr metadata
-   * (e.g. internal project outputs) pass through unchanged.
+   * Apply dependencyMode filtering to a classpath. Both external (managed jar)
+   * and internal (inter-project) entries are filtered based on the mode.
+   * Entries without moduleIDStr metadata pass through unchanged.
    */
   def filterByDependencyMode(
       mode: DependencyMode,
@@ -553,10 +557,12 @@ private[sbt] object ClasspathImpl {
       config: Configuration,
       fullReport: UpdateReport,
       cp: Classpath,
+      allowedInternalIds: Seq[ModuleID],
   ): Classpath =
     mode match
       case DependencyMode.Transitive => cp
       case DependencyMode.Direct     => filterByDirectDeps(directDeps, cp)
-      case DependencyMode.PlusOne => filterByPlusOne(directDeps, projectId, config, fullReport, cp)
+      case DependencyMode.PlusOne =>
+        filterByPlusOne(directDeps, projectId, config, fullReport, cp, allowedInternalIds)
 
 }

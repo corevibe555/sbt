@@ -1,0 +1,13 @@
+# Default mode is transitive — all internal deps visible
+> LibB/checkTransitiveKeepsAll
+
+# Direct mode: only declared .dependsOn deps should remain
+> set ThisBuild / dependencyMode := DependencyMode.Direct
+> LibB/checkDirectKeepsDirect
+> LibB/checkDirectFiltersTransitive
+
+# PlusOne mode: direct deps + their immediate deps
+> set ThisBuild / dependencyMode := DependencyMode.PlusOne
+> LibB/checkPlusOneKeepsDirect
+> LibB/checkPlusOneKeepsPlusOne
+> LibD/checkPlusOneFiltersDeep

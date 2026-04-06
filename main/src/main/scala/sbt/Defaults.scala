@@ -2687,6 +2687,11 @@ object Classpaths {
                   classpathConfiguration.value,
                   updateFull.value,
                   dependencyClasspath.value,
+                  plusOneInternalDeps(
+                    thisProjectRef.value,
+                    buildDependencies.value,
+                    settingsData.value,
+                  ),
                 )
               }
         })
@@ -2761,6 +2766,11 @@ object Classpaths {
             classpathConfiguration.value,
             updateFull.value,
             cp,
+            plusOneInternalDeps(
+              thisProjectRef.value,
+              buildDependencies.value,
+              settingsData.value,
+            ),
           )
         } else {
           filteredDependencyClasspath.value
@@ -4237,6 +4247,19 @@ object Classpaths {
               case _ =>
                 depProjId.withConfigurations(dep.configuration).withExplicitArtifacts(Vector.empty)
     }
+
+  /**
+   * Compute the set of internal (inter-project) ModuleIDs allowed under PlusOne mode.
+   * This includes direct project deps and their immediate project deps.
+   */
+  private[sbt] def plusOneInternalDeps(
+      ref: ProjectRef,
+      deps: BuildDependencies,
+      data: Def.Settings,
+  ): Seq[ModuleID] =
+    val directRefs = deps.classpath(ref).map(_.project)
+    val plusOneRefs = directRefs.flatMap(r => deps.classpath(r).map(_.project))
+    (directRefs ++ plusOneRefs).distinct.flatMap(pRef => (pRef / projectID).get(data))
 
   def projectResolverTask: Initialize[Task[Resolver]] =
     Def.task {
